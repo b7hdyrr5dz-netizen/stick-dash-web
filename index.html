@@ -213,6 +213,7 @@ input.code{text-align:center;letter-spacing:14px;font-size:clamp(22px,7vh,32px);
 #dashBtn span{position:relative;font-family:var(--display);font-size:clamp(11px,3.4vh,15px);display:flex;flex-direction:column;align-items:center;line-height:1;}
 #dashBtn span svg{width:clamp(18px,6vh,26px);height:clamp(18px,6vh,26px);color:#ffd54f;}
 #dashBtn.cd span{opacity:.45;}
+.nostore #btnCoinsNav,.nostore #shopMain button[data-tab=coins],.nostore #mCoinsBtn .plus,.nostore #btnNoAds,.nostore #btnRestore{display:none !important;}
 .fbtn{display:none;pointer-events:auto;position:absolute;bottom:max(14px,env(safe-area-inset-bottom));width:clamp(50px,16vh,68px);height:clamp(50px,16vh,68px);border-radius:50%;align-items:center;justify-content:center;color:#fff;border:3px solid #ffd54f;box-shadow:0 4px 0 rgba(0,0,0,.35);user-select:none;-webkit-user-select:none;touch-action:none;}
 #s-hud.race .fbtn{display:flex;} .fbtn span{font-family:var(--display);font-size:clamp(8px,2.6vh,11px);display:flex;flex-direction:column;align-items:center;line-height:1.05;} .fbtn span b{font-size:clamp(16px,5.4vh,24px);font-weight:400;}
 #atkBtn{left:calc(50% + clamp(46px,14vh,66px));background:radial-gradient(circle at 40% 35%,#ff6a4d,#b3202e);} #defBtn{right:calc(50% + clamp(46px,14vh,66px));background:radial-gradient(circle at 40% 35%,#4da3ff,#1d3f9e);border-color:#9fd0ff;}
@@ -757,7 +758,7 @@ const NOADS = { id: 'stickdash.noads', price: '2,99 €' };
 // Vor der Veröffentlichung eintragen (Apple verlangt eine Datenschutzerklärung, in Deutschland brauchst du auch ein Impressum):
 const PRIVACY_URL = 'https://b7hdyrr5dz-netizen.github.io/stick-dash-web/datenschutz.html';
 /* Auto-Update für die Web-Version: lädt automatisch die neueste Version, ohne neuen Link */
-const BUILD = '2026-11-16-4';
+const BUILD = '2026-11-16-5';
 let updatePending = null;
 function applyUpdate(b) { location.replace(location.pathname + '?v=' + encodeURIComponent(b)); }
 async function checkUpdate() {
@@ -770,6 +771,9 @@ setTimeout(checkUpdate, 1500);
 const IMPRINT_URL = 'https://b7hdyrr5dz-netizen.github.io/stick-dash-web/impressum.html';
 function openLegal(url, what) { if (url) window.open(url, '_blank', 'noopener'); else popup(what, `Hier erscheint später dein Link. Trage die Adresse in der Spieldatei bei <b>${what === 'Datenschutz' ? 'PRIVACY_URL' : 'IMPRINT_URL'}</b> ein.`); }
 // In der App: window.StickDashIAP.restore() liefert ein Promise mit der Liste gekaufter Produkt-IDs
+const NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+const noStore = () => NATIVE && !window.StickDashIAP, noAdSdk = () => NATIVE && !window.StickDashAds, adFree = () => (P && P.noAds) || noAdSdk();
+if (noStore()) document.documentElement.classList.add('nostore');
 async function restorePurchases() {
   const I = window.StickDashIAP;
   if (!I || typeof I.restore !== 'function') { popup('Käufe wiederherstellen', P.noAds ? '„Werbung entfernen“ ist in deinem Konto aktiv.' : 'Das funktioniert erst in der App aus dem App Store. Deine Käufe sind außerdem in deinem Konto gespeichert und bleiben nach dem Login erhalten.'); return; }
@@ -810,13 +814,13 @@ const Ads = {
     });
   },
   async interstitial() {
-    if (P.noAds) return;
+    if (adFree()) return;
     if (++this.runs % this.every) return;
     const A = window.StickDashAds;
     try { if (A && A.showInterstitial) await A.showInterstitial(); else await this.placeholder(3, true); } catch (e) { }
   },
   async rewarded() {
-    if (P.noAds) return true;
+    if (adFree()) return true;
     const A = window.StickDashAds;
     try { if (A && A.showRewarded) return !!(await A.showRewarded()); return await this.placeholder(3, false); } catch (e) { return false; }
   }
@@ -2318,13 +2322,13 @@ function gameOver() {
   const extra = []; if (r.bonusCoins) extra.push(`🍀 +${r.bonusCoins} Bonus-Coins`); if (r.key) extra.push('🗝️ +1 Holztruhe'); if (r.bossKills) extra.push(`👾 ${r.bossKills}× Boss: +${r.bossKills} Holztruhe`);
   $('oExtra').textContent = extra.join(' · ');
   const li = levelInfo(P.xp); $('oLvl').textContent = li.L; $('oBar').style.width = (li.cur / li.need * 100) + '%';
-  $('btnDouble').style.display = r.earned > 0 ? '' : 'none'; $('btnDouble').disabled = false; $('btnDouble').textContent = (P.noAds ? '' : '▶ ') + 'Coins verdoppeln (+' + fmt(r.earned) + ')';
+  $('btnDouble').style.display = r.earned > 0 ? '' : 'none'; $('btnDouble').disabled = false; $('btnDouble').textContent = (adFree() ? '' : '▶ ') + 'Coins verdoppeln (+' + fmt(r.earned) + ')';
   show('s-over');
 }
 let revT = 0, revBusy = false;
 function afterDeath() {
   if (run.pet === 'p_phoenix' && !run.phoenix) { run.phoenix = true; const was = run.revived; revive(); run.revived = was; toast('🔥 Dein Phönix belebt dich wieder!', 1500); return; }
-  if (!run.revived && run.score >= 150) { state = 'revive'; revT = 5; revBusy = false; $('revNum').textContent = '5'; $('revHint').textContent = P.noAds ? 'Lauf mit Schutzschild weiter – einmal pro Runde.' : 'Schau ein kurzes Video und lauf mit Schutzschild weiter.'; $('revYes').textContent = P.noAds ? 'Weiter' : '▶ Weiter'; show('s-revive'); }
+  if (!run.revived && run.score >= 150) { state = 'revive'; revT = 5; revBusy = false; $('revNum').textContent = '5'; $('revHint').textContent = adFree() ? 'Lauf mit Schutzschild weiter – einmal pro Runde.' : 'Schau ein kurzes Video und lauf mit Schutzschild weiter.'; $('revYes').textContent = adFree() ? 'Weiter' : '▶ Weiter'; show('s-revive'); }
   else gameOver();
 }
 function revive() {
@@ -2549,8 +2553,8 @@ function openWheel() { state = 'wheel'; wheelState(); syncWheel(); show('s-wheel
 function syncWheel() {
   const w = wheelState();
   $('wheelTitle').textContent = !w.free ? 'Tägliche Gratis-Drehung' : !w.ad ? 'Noch eine Extra-Drehung' : 'Für heute fertig';
-  $('wheelHint').textContent = !w.free ? 'Einmal pro Tag kostenlos drehen und Coins oder Truhen gewinnen.' : !w.ad ? (P.noAds ? 'Deine Extra-Drehung ist heute gratis.' : 'Schau ein kurzes Video für eine weitere Drehung.') : 'Morgen gibt es wieder eine Gratis-Drehung.';
-  $('wheelSpin').style.display = w.free ? 'none' : ''; $('wheelAd').style.display = w.free && !w.ad ? '' : 'none'; $('wheelAd').textContent = (P.noAds ? '' : '▶ ') + 'Extra-Drehung';
+  $('wheelHint').textContent = !w.free ? 'Einmal pro Tag kostenlos drehen und Coins oder Truhen gewinnen.' : !w.ad ? (adFree() ? 'Deine Extra-Drehung ist heute gratis.' : 'Schau ein kurzes Video für eine weitere Drehung.') : 'Morgen gibt es wieder eine Gratis-Drehung.';
+  $('wheelSpin').style.display = w.free ? 'none' : ''; $('wheelAd').style.display = w.free && !w.ad ? '' : 'none'; $('wheelAd').textContent = (adFree() ? '' : '▶ ') + 'Extra-Drehung';
   $('wheelSpin').disabled = $('wheelAd').disabled = WH.spinning;
   $('wheelBadge').classList.toggle('on', !w.free);
 }
@@ -2615,7 +2619,7 @@ function achHtml() {
 
 /* ------------------------------ Shop ------------------------------- */
 let shopTab = 'skins', shopCat = 'farben', shopSel = 'c_black';
-function openShop(tab) { state = 'shop'; shopTab = tab || 'skins'; shopCat = 'farben'; shopSel = P.eq.color; renderShop(); show('s-shop'); }
+function openShop(tab) { if (tab === 'coins' && noStore()) tab = 'skins'; state = 'shop'; shopTab = tab || 'skins'; shopCat = 'farben'; shopSel = P.eq.color; renderShop(); show('s-shop'); }
 $('shopBack').onclick = () => { SFX.click(); enterMenu(); };
 document.querySelectorAll('#shopMain button').forEach(b => b.onclick = () => { SFX.click(); shopTab = b.dataset.tab; renderShop(); });
 document.querySelectorAll('#shopCats button').forEach(b => b.onclick = () => {
