@@ -123,7 +123,7 @@ input.code{text-align:center;letter-spacing:14px;font-size:clamp(22px,7vh,32px);
   padding:6px 10px;height:clamp(50px,16vh,74px);text-align:left;font:inherit;touch-action:manipulation;position:relative;overflow:hidden;}
 .tile b{display:block;font-family:var(--display);font-weight:400;font-size:clamp(13px,3.8vh,18px);}
 .tile span{display:block;font-size:clamp(10px,2.7vh,12px);color:var(--muted);}
-.tile.locked{opacity:.8;} .tile.locked svg{width:clamp(22px,7vh,32px);height:clamp(22px,7vh,32px);color:#8f8bb8;flex:none;}
+.tile .ic-race{width:clamp(22px,7vh,32px);height:clamp(22px,7vh,32px);color:#ffc83d;flex:none;} .tile.locked{opacity:.8;} .tile.locked svg{width:clamp(22px,7vh,32px);height:clamp(22px,7vh,32px);color:#8f8bb8;flex:none;}
 .tile canvas{width:clamp(42px,13vh,64px);height:clamp(36px,11vh,54px);flex:none;}
 .tile.ready{border-color:rgba(255,200,61,.6);box-shadow:0 0 0 3px rgba(255,200,61,.12),0 0 24px rgba(255,200,61,.2);}
 .tile.ready span{color:var(--gold);}
@@ -357,7 +357,7 @@ input.code{text-align:center;letter-spacing:14px;font-size:clamp(22px,7vh,32px);
       <div class="menu-actions">
         <button class="play" id="btnSingle"><div class="pi"><svg><use href="#i-play"/></svg></div><div><div class="t1">SPIELEN</div><div class="t2">Singleplayer · Endlos-Lauf</div></div></button>
         <div class="tiles">
-          <button class="tile locked" id="btnMulti"><svg><use href="#i-lock"/></svg><div><b>Multiplayer</b><span>Kommt bald</span></div></button>
+          <button class="tile" id="btnMulti"><svg class="ic-race"><use href="#i-trophy"/></svg><div><b>Multiplayer</b><span>Rennen gegen KI</span></div></button>
           <button class="tile" id="btnFree"><canvas id="freeC" width="160" height="130"></canvas><div><b>Gratis-Truhe</b><span id="freeTxt">Bereit!</span></div></button>
         </div>
         <div class="nav">
@@ -1394,7 +1394,7 @@ function newRun() {
     nextX: 620, pu: { shield: 0, magnet: 0, double: 0, jet: 0, slow: 0 }, invuln: 0, dash: { t: 0, cd: 0 }, key: false, keySpawned: false,
     lastPat: '', lastPat2: '', newBest: false
   };
-  run.pet = P.eq.pet || null; run.petPos = { x: -26, y: GROUND - 58 }; run.tut = P.tut ? null : { i: 0, items: [] }; run.tOff = 0;
+  run.race = null; run.pet = P.eq.pet || null; run.petPos = { x: -26, y: GROUND - 58 }; run.tut = P.tut ? null : { i: 0, items: [] }; run.tOff = 0;
   if (run.pet === 'p_beetle') run.pu.shield = puMax('shield');
   pose = null; input.jump = input.slide = false; input.buffer = 0;
 }
@@ -1630,6 +1630,7 @@ const overlap = (p, x, y, w, h) => p.x + PW / 2 - 2 > x && p.x - PW / 2 + 2 < x 
 
 function update(dt, rdt) {
   const r = run, p = r.p;
+  if (r.race && r.race.cd > 0) { raceCountdown(rdt); return; }
   r.t += dt; if (!p.dead) r.speed = r.tut ? BASE_SPEED : Math.min(MAX_SPEED, BASE_SPEED + (r.t - r.tOff) * ACCEL);
   if (r.tut) tutorialTick();
   for (const k in r.pu) if (r.pu[k] > 0) r.pu[k] = Math.max(0, r.pu[k] - rdt);
@@ -1645,7 +1646,7 @@ function update(dt, rdt) {
     if (dashing) { r.dash.t -= dt; if (r.dash.t <= 0) r.invuln = Math.max(r.invuln, 0.2); }
     const fev = r.feverT > 0;
     if (fev) { r.feverT -= rdt; if (r.feverT <= 0) { r.invuln = Math.max(r.invuln, 1.2); toast('Fever vorbei!', 900); } }
-    const spd = r.speed * (dashing ? 2.3 : fev ? 1.25 : 1);
+    const spd = r.speed * (dashing ? 2.3 : fev ? 1.25 : 1) * (r.race && r.race.stun > 0 ? 0.45 : 1);
     if (fev) r.bonus += spd * dt / 15;
     p.x += spd * dt; r.dist += spd * dt; r.score = Math.floor(r.dist / 15) + r.bonus;
     let g = G;
@@ -1670,7 +1671,8 @@ function update(dt, rdt) {
         if (r.pu.shield > 0 || fev || r.invuln > 0) {
           if (r.pu.shield > 0 && !fev && r.invuln <= 0) { r.pu.shield = 0; SFX.shield(); toast('Schild rettet dich!', 900); }
           p.y = GROUND; p.vy = -900; p.jumps = 1; p.slide = false; r.invuln = Math.max(r.invuln, 0.8); burst(p.x, GROUND, 12, '#ff8a00', 220, 3);
-        } else { burst(p.x, GROUND + 6, 22, '#ff8a00', 260, 3); die(); }
+        } else if (r.race) { p.y = GROUND; p.vy = -900; p.jumps = 1; p.slide = false; burst(p.x, GROUND, 14, '#ff8a00', 240, 3); raceStumble(); }
+        else { burst(p.x, GROUND + 6, 22, '#ff8a00', 260, 3); die(); }
       }
     }
     for (const s of r.solids) {
@@ -1718,6 +1720,7 @@ function update(dt, rdt) {
         } else hit(e, 'enemy');
       }
     }
+    if (r.race) raceTick(dt);
     if (!r.boss && !r.tut && r.score >= r.nextBoss && !p.dead) startBoss();
     if (r.boss) updateBoss(dt, p.x - playerScreenX());
     for (const gr of r.groups) if (!gr.counted && p.x - PW / 2 > gr.x1) { gr.counted = true; r.crateJumps++; }
@@ -1799,12 +1802,145 @@ function hit(obj, kind) {
   if (r.tut) { if (r.invuln <= 0) toast('Kein Problem – gleich nochmal versuchen!', 1200); r.invuln = Math.max(r.invuln, 1); if (!soft) destroy(obj, kind); return; } // im Tutorial kann man nicht sterben
   if (r.dash.t > 0 || r.feverT > 0 || r.invuln > 0) { if (!soft) destroy(obj, kind); return; }
   if (r.pu.shield > 0) { r.pu.shield = 0; r.invuln = 1.0; SFX.shield(); toast('Schild zerstört!', 900); if (!soft) destroy(obj, kind); return; }
+  if (r.race) { raceStumble(); if (!soft) destroy(obj, kind); return; }
   die();
 }
 function die() {
   const p = run.p; if (p.dead) return;
   p.dead = true; p.deadT = 0; p.vy = -520; p.vx = -140; p.slide = false; p.h = PH; shake = 12; state = 'dead';
   SFX.crash(); burst(p.x, p.y - 25, 18, skinFrom(P.eq).color, 260, 3); navigator.vibrate && navigator.vibrate(120);
+}
+
+
+/* ------------------------- Multiplayer: Rennen gegen KI ------------------------- */
+const RACE_LEN = 30000; // Welt-Einheiten, 15 Einheiten = 1 m
+const AI_NAMES = ['Blitz', 'Turbo', 'Kiwi', 'Rakete', 'Nova', 'Flitzer', 'Pixel', 'Zack', 'Luna', 'Komet', 'Wirbel', 'Sprinti'];
+const RACE_REWARD = [120, 60, 30, 10];
+function randomEq() {
+  const col = pick(ITEMS.filter(i => i.cat === 'farben' && i.id !== 'c_black' && i.id !== 'c_rainbow')).id;
+  const hat = Math.random() < 0.7 ? pick(ITEMS.filter(i => i.cat === 'kopf')).id : null;
+  const sp = Math.random() < 0.25 ? pick(['x_ninja', 'x_robot', 'x_zombie', 'x_skeleton', 'x_ice', 'x_gold']) : null;
+  return { color: col, hat, shoes: null, special: sp, trail: null, pet: null };
+}
+function setupRace() {
+  const r = run; r.tut = null; r.nextBoss = Infinity; r.pet = r.pet === 'p_phoenix' ? null : r.pet;
+  const names = AI_NAMES.slice().sort(() => Math.random() - 0.5), skills = [[0.93, 0.15], [0.97, 0.1], [1.0, 0.06]].sort(() => Math.random() - 0.5);
+  r.race = { cd: 3.4, cdN: 4, len: RACE_LEN, stun: 0, done: false, endT: 0, finishers: [], ais: [] };
+  [-45, -90, -135].forEach((off, i) => r.race.ais.push({ name: names[i], eq: randomEq(), skill: skills[i][0], err: skills[i][1], x: off, y: GROUND, jump: null, slideT: 0, stun: 0, trip: 0, phase: Math.random() * 6, fin: 0, pose: null }));
+}
+function raceCountdown(rdt) {
+  const rc = run.race; rc.cd -= rdt; const n = Math.ceil(rc.cd);
+  if (n !== rc.cdN) { rc.cdN = n; if (n > 0 && n <= 3) SFX.warn(); else if (n <= 0) { SFX.levelup(); shake = 5; } }
+  for (const a of rc.ais) { a.phase += rdt * 2; }
+}
+function raceStumble() {
+  const r = run, p = r.p; r.race.stun = 1.1; r.invuln = Math.max(r.invuln, 1.7); shake = 8;
+  SFX.crash(); navigator.vibrate && navigator.vibrate(60); burst(p.x, p.y - 25, 14, skinFrom(P.eq).color, 220, 3); floatText(p.x, p.y - 60, 'AUTSCH!', '#ff7a8f');
+}
+// Hindernisse, die eine KI zwischen x0 und x1 überspringen ('j') oder unterrutschen ('s') muss
+function raceObstacles(x0, x1) {
+  const r = run, o = [], add = (a, b, h, k) => { if (b > x0 && a < x1) o.push({ a, b, h, k }); };
+  for (const s of r.solids) if (!s.dead && s.y > GROUND - 170) add(s.x, s.x + s.w, GROUND - s.y, 'j');
+  for (const w of r.saws) { if (w.dead) continue; if (w.hang) add(w.x - w.r, w.x + w.r, 0, 's'); else if (!w.osc) add(w.x - w.r, w.x + w.r, GROUND - w.y + w.r, 'j'); }
+  for (const q of r.spikes) add(q.x, q.x + q.w, 22, 'j');
+  for (const q of r.pits) add(q.x, q.x + q.w, 34, 'j');
+  for (const f of r.flames) add(f.x - 8, f.x + 8, 84, 'j');
+  for (const e of r.enemies) if (!e.dead && e.type !== 'missile') { if (e.type === 'drone') add(e.x, e.x + e.w, 0, 's'); else add(e.x, e.x + e.w, e.h + 6, 'j'); }
+  for (const l of r.lasers) if (l.y > GROUND - 60) add(l.x, l.x + l.w, 0, 's');
+  for (const c of r.crushers) add(c.x, c.x + c.w, 0, 's');
+  return o;
+}
+function raceTick(dt) {
+  const r = run, p = r.p, rc = r.race;
+  rc.stun = Math.max(0, rc.stun - dt);
+  for (const a of rc.ais) {
+    a.trip = Math.max(0, a.trip - dt); a.slideT = Math.max(0, a.slideT - dt);
+    if (a.fin && a.x > rc.len + 400) { a.x += r.speed * 0.5 * dt; a.phase += dt * 6; continue; }
+    let f = a.skill; const lead = a.x - p.x;
+    if (lead < -260) f += 0.14; else if (lead < -90) f += 0.05; else if (lead > 380) f -= 0.12; else if (lead > 160) f -= 0.04;
+    if (a.stun > 0) { a.stun -= dt; f *= 0.4; }
+    const v = r.speed * f; a.x += v * dt; a.phase += dt * (v / 270) * 13;
+    const vis = a.x > p.x - playerScreenX() - 80 && a.x < p.x - playerScreenX() + VW + 80;
+    if (!a.jump && a.stun <= 0) {
+      const ahead = raceObstacles(a.x + 18, a.x + 70 + v * 0.06);
+      const jo = ahead.filter(q => q.k === 'j');
+      if (jo.length) {
+        if (Math.random() < a.err) { a.stun = 1.1; a.trip = 0.55; if (vis) { burst(a.x, a.y - 25, 10, skinFrom(a.eq).color, 200, 3); floatText(a.x, a.y - 62, 'Ups!', '#ffffff'); SFX.land(); } }
+        else {
+          let end = Math.max(...jo.map(q => q.b)), h = Math.max(...jo.map(q => q.h)), more = true;
+          while (more) { more = false; for (const q of raceObstacles(end, end + 70)) if (q.k === 'j' && q.b > end) { end = q.b; h = Math.max(h, q.h); more = true; } }
+          a.jump = { x0: a.x, x1: end + 34, h: Math.min(215, h + 38) };
+        }
+      } else if (ahead.some(q => q.k === 's') && a.slideT <= 0) a.slideT = 0.5;
+    }
+    if (a.jump) { const u = (a.x - a.jump.x0) / (a.jump.x1 - a.jump.x0); if (u >= 1) { a.jump = null; a.y = GROUND; } else { a.y = GROUND - 4 * a.jump.h * u * (1 - u); a.up = u < 0.5; } }
+    if (!vis && a.stun <= 0 && Math.random() < dt * a.err * 0.9) a.stun = 1.1;
+    if (!a.fin && a.x >= rc.len) { rc.finishers.push(a.name); a.fin = rc.finishers.length; if (!rc.done) toast(`🏁 ${a.name} ist im Ziel – Platz ${a.fin}!`, 1500); }
+  }
+  if (!rc.done && p.x >= rc.len) {
+    rc.done = true; rc.finishers.push('Du'); rc.place = rc.finishers.length; r.invuln = 99; SFX.levelup(); shake = 6;
+    burst(p.x, p.y - 30, 40, '#ffe14d', 360, 4); toast(rc.place === 1 ? '🏆 SIEG! Du bist Erster!' : `🏁 Im Ziel – Platz ${rc.place}!`, 2000);
+  }
+  if (rc.done) { rc.endT += dt; if (rc.endT > 1.6 && state === 'play') raceEnd(); }
+}
+function drawRaceAis(L, R) {
+  const rc = run.race;
+  // Ziellinie
+  const fx = rc.len; if (fx > L - 40 && fx < R + 40) {
+    for (let y = 70; y < GROUND; y += 12) for (let k = 0; k < 2; k++) { ctx.fillStyle = ((y / 12 + k) % 2) < 1 ? '#fff' : '#1b1830'; ctx.fillRect(fx + k * 6, y, 6, 12); }
+    ctx.fillStyle = '#ff3d6e'; rrect(ctx, fx - 34, 46, 80, 22, 8); ctx.fill(); ctx.fillStyle = '#fff'; ctx.font = '400 13px "Lilita One",sans-serif'; ctx.textAlign = 'center'; ctx.fillText('ZIEL', fx + 6, 62);
+  }
+  for (const a of rc.ais) {
+    if (a.x < L - 30 || a.x > R + 30) continue;
+    let tgt, rot = 0, gf = false;
+    if (run.race.cd > 0) tgt = POSES.idle;
+    else if (a.trip > 0) { tgt = POSES.dead; rot = -0.6; }
+    else if (a.jump) tgt = a.up ? POSES.jump : POSES.fall;
+    else if (a.slideT > 0) tgt = POSES.slide;
+    else { tgt = runSpec(a.phase); gf = true; }
+    a.pose = blendSpec(a.pose, tgt, 0.4);
+    ctx.globalAlpha = 0.88; drawStick(ctx, a.x, a.y, 1, a.pose, skinFrom(a.eq), { rot, groundFeet: gf, time, air: !!a.jump }); ctx.globalAlpha = 1;
+    const ty = a.y - (a.slideT > 0 ? 34 : 70); ctx.font = '800 9px Nunito,sans-serif'; const tw = ctx.measureText(a.name).width + 12;
+    ctx.fillStyle = 'rgba(20,18,43,0.75)'; rrect(ctx, a.x - tw / 2, ty - 10, tw, 14, 7); ctx.fill(); ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.fillText(a.name, a.x, ty);
+    if (a.stun > 0 && Math.floor(time * 8) % 2) { ctx.font = '400 12px "Lilita One",sans-serif'; ctx.fillStyle = '#ffe14d'; ctx.fillText('✦ ✦', a.x, ty - 13); }
+  }
+  ctx.textAlign = 'left';
+}
+function raceStandings() {
+  const rc = run.race, all = [{ name: 'Du', x: run.p.x, you: true }, ...rc.ais.map(a => ({ name: a.name, x: a.x, eq: a.eq }))];
+  return all.sort((a, b) => { const fa = rc.finishers.indexOf(a.name), fb = rc.finishers.indexOf(b.name); if (fa >= 0 || fb >= 0) return (fa < 0 ? 99 : fa) - (fb < 0 ? 99 : fb); return b.x - a.x; });
+}
+function renderRaceHud() {
+  const r = run, rc = r.race, p = r.p, bw = Math.min(250, VW * 0.3), bx = VW / 2 - bw / 2, by = 64 + safeT;
+  ctx.fillStyle = 'rgba(20,18,43,0.78)'; rrect(ctx, bx - 12, by - 6, bw + 40, 40, 12); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.14)'; rrect(ctx, bx, by + 6, bw, 6, 3); ctx.fill();
+  for (let i = 0; i < 4; i++) { ctx.fillStyle = i % 2 ? '#1b1830' : '#fff'; ctx.fillRect(bx + bw + 4, by + 1 + i * 4, 4, 4); ctx.fillStyle = i % 2 ? '#fff' : '#1b1830'; ctx.fillRect(bx + bw + 8, by + 1 + i * 4, 4, 4); }
+  const pos = x => bx + clamp(x / rc.len, 0, 1) * bw;
+  for (const a of rc.ais) { ctx.fillStyle = skinFrom(a.eq).color; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(pos(a.x), by + 9, 4.5, 0, 7); ctx.fill(); ctx.stroke(); }
+  ctx.fillStyle = '#ffe14d'; ctx.strokeStyle = '#1b1830'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(pos(p.x), by + 9, 6.5, 0, 7); ctx.fill(); ctx.stroke();
+  const st = raceStandings(), place = st.findIndex(q => q.you) + 1, left = Math.max(0, (rc.len - p.x) / 15);
+  ctx.font = '400 13px "Lilita One",sans-serif'; ctx.textAlign = 'left'; ctx.fillStyle = place === 1 ? '#ffe14d' : '#fff'; ctx.fillText(`PLATZ ${place}/4`, bx, by + 28);
+  ctx.font = '800 9px Nunito,sans-serif'; ctx.fillStyle = '#a9a6d6'; ctx.textAlign = 'right'; ctx.fillText(rc.done ? 'IM ZIEL!' : fmt(left) + ' m bis zum Ziel', bx + bw + 12, by + 27);
+  // KI vor dir außerhalb des Bildes
+  const camX = p.x - playerScreenX(); let k = 0;
+  for (const a of rc.ais) if (a.x > camX + VW + 10 && !a.fin) { const d = Math.round((a.x - p.x) / 15), ty = 130 + safeT + k++ * 22;
+    ctx.fillStyle = 'rgba(20,18,43,0.75)'; rrect(ctx, VW - 112 - safeL, ty - 11, 104, 18, 9); ctx.fill();
+    ctx.fillStyle = skinFrom(a.eq).color; ctx.beginPath(); ctx.arc(VW - 102 - safeL, ty - 2, 4, 0, 7); ctx.fill();
+    ctx.font = '800 9px Nunito,sans-serif'; ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.fillText(`${a.name} +${d} m ▶`, VW - 94 - safeL, ty + 1); }
+  if (rc.cd > 0) { const n = Math.ceil(rc.cd), u = rc.cd - Math.floor(rc.cd), txt = n > 3 ? 'BEREIT?' : n > 0 ? String(n) : 'LOS!';
+    ctx.save(); ctx.translate(VW / 2, 180); const sc = n > 3 ? 1 : 1 + (1 - u) * 0.0 + u * 0.6; ctx.scale(sc, sc);
+    ctx.font = `400 ${n > 3 ? 46 : 92}px "Lilita One",sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineWidth = 10; ctx.strokeStyle = '#1b1830'; ctx.strokeText(txt, 0, 0); ctx.fillStyle = n > 3 ? '#fff' : '#ffe14d'; ctx.fillText(txt, 0, 0); ctx.restore(); ctx.textBaseline = 'alphabetic'; }
+  else if (r.t < 0.8) { ctx.globalAlpha = 1 - r.t / 0.8; ctx.font = '400 92px "Lilita One",sans-serif'; ctx.textAlign = 'center'; ctx.lineWidth = 10; ctx.strokeStyle = '#1b1830'; ctx.strokeText('LOS!', VW / 2, 212); ctx.fillStyle = '#2fe08a'; ctx.fillText('LOS!', VW / 2, 212); ctx.globalAlpha = 1; }
+}
+function raceEnd() {
+  const r = run, rc = r.race; state = 'over';
+  const st = raceStandings(), place = st.findIndex(q => q.you) + 1, prize = RACE_REWARD[place - 1] || 0;
+  P.stats.races = (P.stats.races || 0) + 1; if (place === 1) { P.stats.raceWins = (P.stats.raceWins || 0) + 1; P.chests.holz++; }
+  P.coins += r.coins + prize; P.stats.totalCoins += r.coins + prize; P.rounds++; save(true);
+  const medal = ['🥇', '🥈', '🥉', '4.'];
+  const rows = st.map((q, i) => `<div style="display:flex;justify-content:space-between;padding:4px 10px;border-radius:9px;margin:2px 0;${q.you ? 'background:rgba(255,213,79,.18);font-weight:900' : ''}"><span>${medal[i]} ${q.you ? esc(P.username) + ' (Du)' : esc(q.name) + ' <small style="opacity:.6">KI</small>'}</span><span>${RACE_REWARD[i]} 🪙</span></div>`).join('');
+  popup(place === 1 ? '🏆 Du hast gewonnen!' : `Platz ${place} von 4`, rows + `<div style="margin-top:8px">Belohnung: <b>+${prize} Coins</b> · Gesammelt: <b>+${r.coins} Coins</b>${place === 1 ? ' · <b>+1 Holztruhe</b>' : ''}</div>`,
+    [{ t: 'Menü', cls: 'dark', fn: () => { run = null; enterMenu(); } }, { t: 'Nochmal', fn: () => startGame('race') }]);
 }
 
 /* ------------------------------ Rendern ------------------------------ */
@@ -1938,6 +2074,7 @@ function renderGame() {
   for (const k of r.keys) if (!k.taken && k.x > L && k.x < R) drawKey(ctx, k.x, k.y + Math.sin(k.t * 4) * 4, k.t);
   for (const e of r.enemies) if (!e.dead && e.x + e.w > L && e.x < R) drawEnemy(e);
   if (r.boss) drawBoss(camX);
+  if (r.race) drawRaceAis(L, R);
   // Spieler
   const skin = skinFrom(P.eq);
   if ((skin.special === 'x_neon' || r.dash.t > 0) && r.trail.length > 2) {
@@ -2058,7 +2195,7 @@ function renderHUD() {
   ctx.font = '400 16px "Lilita One","Arial Black",sans-serif'; ctx.fillStyle = '#ffd54f'; ctx.textAlign = 'right'; ctx.fillText(fmt(r.coins), x0 + 267, y0 + 14.5);
   if (r.key) drawKey(ctx, x0 + 296, y0 + 13, 0);
   const lbl = WORLDS[r.world].dark ? 'rgba(255,255,255,0.9)' : 'rgba(20,18,43,0.85)';
-  ctx.font = '800 9px Nunito,sans-serif'; ctx.fillStyle = lbl; ctx.textAlign = 'left'; ctx.fillText('BEST ' + fmt(Math.max(P.highscore, r.score)), x0 + 6, y0 + 38);
+  if (!r.race) { ctx.font = '800 9px Nunito,sans-serif'; ctx.fillStyle = lbl; ctx.textAlign = 'left'; ctx.fillText('BEST ' + fmt(Math.max(P.highscore, r.score)), x0 + 6, y0 + 38); }
   { const fx = x0 + 4, fy = y0 + 46, fw = 104; ctx.fillStyle = 'rgba(20,18,43,0.6)'; rrect(ctx, fx, fy, fw, 7, 3.5); ctx.fill();
     const fv = r.feverT > 0 ? r.feverT / 7 : r.fever; if (fv > 0.02) { const fg = ctx.createLinearGradient(fx, 0, fx + fw, 0); if (r.feverT > 0) { fg.addColorStop(0, hslHex((time * 300) % 360)); fg.addColorStop(1, hslHex((time * 300 + 120) % 360)); } else { fg.addColorStop(0, '#ffe14d'); fg.addColorStop(1, '#ff3f5e'); } ctx.fillStyle = fg; rrect(ctx, fx, fy, Math.max(7, fw * fv), 7, 3.5); ctx.fill(); }
     ctx.font = '800 7px Nunito,sans-serif'; ctx.fillStyle = lbl; ctx.textAlign = 'left'; ctx.fillText(r.feverT > 0 ? 'FEVER!' : 'FEVER', fx + fw + 5, fy + 4); }
@@ -2077,7 +2214,8 @@ function renderHUD() {
       ctx.fillStyle = 'rgba(20,18,43,0.86)'; rrect(ctx, bx, by, tw, 34, 17); ctx.fill(); ctx.strokeStyle = '#36e6d2'; ctx.lineWidth = 1.5; ctx.stroke();
       ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(it.txt, VW / 2, by + 18); ctx.textBaseline = 'alphabetic';
       ctx.font = '800 9px Nunito,sans-serif'; ctx.fillStyle = '#7ef7e6'; ctx.fillText('TUTORIAL ' + Math.min(TUT.length, r.tut.items.indexOf(it) + 1) + '/' + TUT.length, VW / 2, by - 5); } }
-  if (r.t < 4.5 && !r.p.dead && !r.tut) {
+  if (r.race) renderRaceHud();
+  if (r.t < 4.5 && !r.p.dead && !r.tut && !r.race) {
     ctx.globalAlpha = clamp(4.5 - r.t, 0, 1) * 0.85; ctx.font = '400 13px "Lilita One",sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#1b1830';
     ctx.fillText('◀ LINKS: RUTSCHEN', VW * 0.22, 290); ctx.fillText('RECHTS: SPRINGEN ▶', VW * 0.78, 290);
     ctx.fillStyle = 'rgba(27,24,48,0.25)'; ctx.fillRect(VW / 2 - 0.5, 60, 1, 200); ctx.globalAlpha = 1;
@@ -2094,7 +2232,7 @@ function renderAttract(dt) {
 }
 
 /* ------------------------------ Ablauf ------------------------------- */
-function startGame() { audioInit(); newRun(); state = 'play'; dashUi = -1; show('s-hud'); lastT = performance.now(); }
+function startGame(mode) { audioInit(); newRun(); if (mode === 'race') setupRace(); state = 'play'; dashUi = -1; show('s-hud'); lastT = performance.now(); }
 function pauseGame() { if (state !== 'play') return; state = 'pause'; show('s-pause'); input.jump = input.slide = false; touches.clear(); }
 function resumeGame() { if (state !== 'pause') return; state = 'play'; show('s-hud'); lastT = performance.now(); }
 function finishRun() {
@@ -2318,7 +2456,7 @@ function renderFreeChest() {
   if (txt !== freeTxtLast) { freeTxtLast = txt; $('freeTxt').textContent = txt; $('btnFree').classList.toggle('ready', ready); }
 }
 $('btnSingle').onclick = () => { SFX.click(); startGame(); };
-$('btnMulti').onclick = () => { SFX.click(); popup('Multiplayer kommt bald!', 'Wir arbeiten an spannenden Rennen gegen deine Freunde. Bleib dran!'); };
+$('btnMulti').onclick = () => { SFX.click(); popup('🏁 Rennen gegen KI', 'Du trittst gegen <b>3 KI-Läufer</b> an. Wer zuerst <b>' + fmt(RACE_LEN / 15) + ' m</b> schafft, gewinnt.<br>Wenn du ein Hindernis triffst, stirbst du nicht, wirst aber kurz ausgebremst.<br><br>🥇 120 Coins + Holztruhe · 🥈 60 · 🥉 30 · 4. Platz 10', [{ t: 'Abbrechen', cls: 'dark' }, { t: 'Los geht’s!', fn: () => startGame('race') }]); };
 $('btnShop').onclick = () => { SFX.click(); openShop('skins'); };
 $('btnChests').onclick = () => { SFX.click(); openShop('chests'); };
 $('btnCoinsNav').onclick = () => { SFX.click(); openShop('coins'); };
@@ -2332,7 +2470,7 @@ $('btnAch').onclick = () => { SFX.click(); popup('Aufgaben & Erfolge', missionsH
 const stopEv = (el, fn) => { el.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); fn(); }, { passive: false }); el.addEventListener('mousedown', e => { e.stopPropagation(); fn(); }); };
 stopEv($('pauseBtn'), pauseGame); stopEv($('dashBtn'), () => { audioInit(); dashPress(); });
 $('btnResume').onclick = () => { SFX.click(); resumeGame(); };
-$('btnQuit').onclick = () => { SFX.click(); finishRun(); run = null; enterMenu(); };
+$('btnQuit').onclick = () => { SFX.click(); if (run && run.race) { P.coins += run.coins; save(true); } else finishRun(); run = null; enterMenu(); };
 $('btnAgain').onclick = async () => { SFX.click(); await Ads.interstitial(); if (popOpen) { run = null; enterMenu(); return; } startGame(); };
 $('btnMenu').onclick = async () => { SFX.click(); await Ads.interstitial(); run = null; enterMenu(); };
 $('btnNoAds').onclick = () => { SFX.click(); buyNoAds(); };
@@ -2636,7 +2774,7 @@ document.addEventListener('gesturestart', e => e.preventDefault());
 /* --------------------------- Ladebildschirm -------------------------- */
 const Loader = {
   frac: 0, shown: 0, t0: performance.now(), done: false, logo: null, tipI: 0, tipT: 0,
-  tips: ['Halte den Sprung länger gedrückt, um höher zu springen.', 'Rutschen im Sprung = schneller Sturzflug.', 'Spring Gegnern auf den Kopf – das füllt die Fever-Leiste.', 'Mit dem Dash zerschmetterst du Kisten und Gegner.', 'Schlüssel im Lauf bringen dir eine Holztruhe.', 'Erledige alle 3 Tagesaufgaben für eine Extra-Truhe.', 'Unter Pressen und der Abrissbirne rutschst du einfach durch.', 'Lavagruben: springen – oder mit dem Dash drüberfliegen.', 'Alle 1200 Punkte erreichst du eine neue Welt.', 'Mehrere Gegner hintereinander ohne Bodenkontakt geben Combo-Punkte.', 'Begleiter aus dem Shop fliegen mit und helfen dir.', 'Alle 2000 Punkte kommt ein Boss. Wenn er überhitzt, spring ihm auf den Kopf.', 'Dreh jeden Tag am Glücksrad – mit Glück gibt es den Jackpot.'],
+  tips: ['Halte den Sprung länger gedrückt, um höher zu springen.', 'Rutschen im Sprung = schneller Sturzflug.', 'Spring Gegnern auf den Kopf – das füllt die Fever-Leiste.', 'Mit dem Dash zerschmetterst du Kisten und Gegner.', 'Schlüssel im Lauf bringen dir eine Holztruhe.', 'Erledige alle 3 Tagesaufgaben für eine Extra-Truhe.', 'Unter Pressen und der Abrissbirne rutschst du einfach durch.', 'Lavagruben: springen – oder mit dem Dash drüberfliegen.', 'Alle 1200 Punkte erreichst du eine neue Welt.', 'Mehrere Gegner hintereinander ohne Bodenkontakt geben Combo-Punkte.', 'Begleiter aus dem Shop fliegen mit und helfen dir.', 'Alle 2000 Punkte kommt ein Boss. Wenn er überhitzt, spring ihm auf den Kopf.', 'Dreh jeden Tag am Glücksrad – mit Glück gibt es den Jackpot.', 'Im Multiplayer-Rennen stirbst du nicht – Treffer bremsen dich aber aus.'],
   set(f, txt) { this.frac = Math.max(this.frac, f); if (txt) $('ldTxt').textContent = txt; },
   start() {
     this.logo = document.createElement('canvas'); this.logo.width = 720; this.logo.height = 300; drawLogo(this.logo);
