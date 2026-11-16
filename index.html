@@ -213,6 +213,10 @@ input.code{text-align:center;letter-spacing:14px;font-size:clamp(22px,7vh,32px);
 #dashBtn span{position:relative;font-family:var(--display);font-size:clamp(11px,3.4vh,15px);display:flex;flex-direction:column;align-items:center;line-height:1;}
 #dashBtn span svg{width:clamp(18px,6vh,26px);height:clamp(18px,6vh,26px);color:#ffd54f;}
 #dashBtn.cd span{opacity:.45;}
+.fbtn{display:none;pointer-events:auto;position:absolute;bottom:max(14px,env(safe-area-inset-bottom));width:clamp(50px,16vh,68px);height:clamp(50px,16vh,68px);border-radius:50%;align-items:center;justify-content:center;color:#fff;border:3px solid #ffd54f;box-shadow:0 4px 0 rgba(0,0,0,.35);user-select:none;-webkit-user-select:none;touch-action:none;}
+#s-hud.race .fbtn{display:flex;} .fbtn span{font-family:var(--display);font-size:clamp(8px,2.6vh,11px);display:flex;flex-direction:column;align-items:center;line-height:1.05;} .fbtn span b{font-size:clamp(16px,5.4vh,24px);font-weight:400;}
+#atkBtn{left:calc(50% + clamp(46px,14vh,66px));background:radial-gradient(circle at 40% 35%,#ff6a4d,#b3202e);} #defBtn{right:calc(50% + clamp(46px,14vh,66px));background:radial-gradient(circle at 40% 35%,#4da3ff,#1d3f9e);border-color:#9fd0ff;}
+.fbtn.cd{opacity:.4;filter:grayscale(.6);} .fbtn.act{transform:scale(1.12);}
 #dashBtn.ready{animation:readyPulse 1s infinite alternate;}
 @keyframes readyPulse{from{box-shadow:0 0 0 0 rgba(255,213,79,.0)}to{box-shadow:0 0 0 6px rgba(255,213,79,.25)}}
 .center{align-items:center;justify-content:center;background:rgba(14,12,32,.6);}
@@ -426,6 +430,7 @@ input.code{text-align:center;letter-spacing:14px;font-size:clamp(22px,7vh,32px);
   <div class="screen" id="s-hud">
     <div id="pauseBtn"><i></i><i></i></div>
     <div id="dashBtn" class="ready"><span><svg><use href="#i-bolt"/></svg>DASH</span></div>
+    <div id="defBtn" class="fbtn"><span><b>🛡️</b>BLOCK</span></div><div id="atkBtn" class="fbtn"><span><b>👊</b>SCHLAG</span></div>
   </div>
 
   <!-- PAUSE -->
@@ -752,7 +757,7 @@ const NOADS = { id: 'stickdash.noads', price: '2,99 €' };
 // Vor der Veröffentlichung eintragen (Apple verlangt eine Datenschutzerklärung, in Deutschland brauchst du auch ein Impressum):
 const PRIVACY_URL = '';
 /* Auto-Update für die Web-Version: lädt automatisch die neueste Version, ohne neuen Link */
-const BUILD = '2026-11-16-2';
+const BUILD = '2026-11-16-3';
 let updatePending = null;
 function applyUpdate(b) { location.replace(location.pathname + '?v=' + encodeURIComponent(b)); }
 async function checkUpdate() {
@@ -1565,6 +1570,7 @@ window.addEventListener('keydown', e => {
   if (['Space', 'ArrowUp', 'KeyW'].includes(e.code)) { e.preventDefault(); jumpPress(); }
   if (['ArrowDown', 'KeyS'].includes(e.code)) { e.preventDefault(); slidePress(); }
   if (['KeyD', 'ShiftLeft', 'ShiftRight', 'ArrowRight'].includes(e.code)) { e.preventDefault(); dashPress(); }
+  if (e.code === 'KeyF') attackPress(); if (e.code === 'KeyG' || e.code === 'KeyA') blockPress();
   if (e.code === 'KeyP' || e.code === 'Escape') { if (state === 'play') pauseGame(); else if (state === 'pause') resumeGame(); }
 });
 window.addEventListener('keyup', e => {
@@ -1837,8 +1843,8 @@ function randomEq() {
 function setupRace() {
   const r = run; r.tut = null; r.nextBoss = Infinity; r.pet = r.pet === 'p_phoenix' ? null : r.pet;
   const names = AI_NAMES.slice().sort(() => Math.random() - 0.5), skills = [[0.93, 0.15], [0.97, 0.1], [1.0, 0.06]].sort(() => Math.random() - 0.5);
-  r.race = { cd: 3.4, cdN: 4, len: RACE_LEN, stun: 0, done: false, endT: 0, finishers: [], ais: [] };
-  [-45, -90, -135].forEach((off, i) => r.race.ais.push({ name: names[i], eq: randomEq(), skill: skills[i][0], err: skills[i][1], x: off, y: GROUND, jump: null, slideT: 0, stun: 0, trip: 0, phase: Math.random() * 6, fin: 0, pose: null }));
+  r.race = { cd: 3.4, cdN: 4, len: RACE_LEN, stun: 0, done: false, endT: 0, finishers: [], ais: [], atk: { cd: 0, t: 0 }, block: { cd: 0, t: 0 }, hits: 0, blocks: 0 };
+  [0, 0, 0].forEach((off, i) => r.race.ais.push({ name: names[i], eq: randomEq(), skill: skills[i][0], err: skills[i][1], atkCd: rand(3.5, 7), wind: 0, guard: 0, i, x: off, y: GROUND, jump: null, slideT: 0, stun: 0, trip: 0, phase: Math.random() * 6, fin: 0, pose: null }));
 }
 function raceCountdown(rdt) {
   const rc = run.race; rc.cd -= rdt; const n = Math.ceil(rc.cd);
@@ -1862,9 +1868,44 @@ function raceObstacles(x0, x1) {
   for (const c of r.crushers) add(c.x, c.x + c.w, 0, 's');
   return o;
 }
+
+function attackPress() {
+  if (state !== 'play' || !run || !run.race) return; const r = run, rc = r.race, p = r.p;
+  if (rc.cd > 0 || rc.done || rc.atk.cd > 0 || rc.stun > 0 || p.dead) return;
+  audioInit(); rc.atk.cd = 2.2; rc.atk.t = 0.28;
+  let best = null; for (const a of rc.ais) { if (a.fin) continue; const d = Math.abs(a.x - p.x); if (d < 90 && Math.abs(a.y - p.y) < 80 && (!best || d < Math.abs(best.x - p.x))) best = a; }
+  if (!best) { SFX.slide(); floatText(p.x + 30, p.y - 60, 'Daneben!', '#cfd6dd'); return; }
+  if (best.stun <= 0 && Math.random() < 0.22) { best.guard = 0.5; SFX.shield(); floatText(best.x, best.y - 84, 'Geblockt!', '#9fd0ff'); return; }
+  best.stun = 1.5; best.trip = 0.65; best.wind = 0; best.jump = null; best.y = GROUND; rc.hits++; r.bonus += 40; r.coins += 2; shake = 6;
+  SFX.stomp(); navigator.vibrate && navigator.vibrate(30); burst(best.x, best.y - 30, 16, '#ffe14d', 260, 3.5); floatText(best.x, best.y - 84, 'TREFFER! +40', '#ffe14d');
+}
+function blockPress() {
+  if (state !== 'play' || !run || !run.race) return; const rc = run.race;
+  if (rc.cd > 0 || rc.done || rc.block.cd > 0 || rc.stun > 0) return;
+  audioInit(); rc.block.cd = 2.6; rc.block.t = 0.9; SFX.shield();
+}
+function raceFight(dt) {
+  const r = run, rc = r.race, p = r.p;
+  rc.atk.cd = Math.max(0, rc.atk.cd - dt); rc.atk.t = Math.max(0, rc.atk.t - dt); rc.block.cd = Math.max(0, rc.block.cd - dt); rc.block.t = Math.max(0, rc.block.t - dt);
+  for (const a of rc.ais) {
+    a.guard = Math.max(0, a.guard - dt); if (a.fin || rc.done) { a.wind = 0; continue; }
+    const near = Math.abs(a.x - p.x) < 80 && Math.abs(a.y - p.y) < 90;
+    if (a.wind > 0) {
+      a.wind -= dt; if (a.stun > 0) { a.wind = 0; continue; }
+      if (a.wind <= 0) { a.atkCd = rand(4, 7.5); a.punch = 0.25;
+        if (Math.abs(a.x - p.x) > 105) { floatText(a.x, a.y - 84, 'Daneben!', '#cfd6dd'); }
+        else if (rc.block.t > 0) { a.stun = 1.6; a.trip = 0.65; rc.blocks++; r.bonus += 30; rc.block.cd = Math.min(rc.block.cd, 0.6); SFX.shield(); shake = 5; burst(p.x + 14, p.y - 30, 14, '#9fd0ff', 240, 3); floatText(p.x, p.y - 78, 'GEBLOCKT! +30', '#9fd0ff'); }
+        else if (r.dash.t > 0 || r.feverT > 0 || r.invuln > 0) { floatText(a.x, a.y - 84, 'Daneben!', '#cfd6dd'); }
+        else if (r.pu.shield > 0) { r.pu.shield = 0; r.invuln = 1; SFX.shield(); toast('Schild zerstört!', 900); }
+        else { raceStumble(); floatText(a.x, a.y - 84, 'ZACK!', '#ff7a8f'); }
+      }
+    } else { a.atkCd -= dt; if (a.atkCd <= 0 && near && a.stun <= 0 && !a.jump && r.t > 3) { a.wind = 0.6; SFX.warn(); } else if (a.atkCd < -2) a.atkCd = rand(1, 2.5); }
+    a.punch = Math.max(0, (a.punch || 0) - dt);
+  }
+}
 function raceTick(dt) {
   const r = run, p = r.p, rc = r.race;
-  rc.stun = Math.max(0, rc.stun - dt);
+  rc.stun = Math.max(0, rc.stun - dt); raceFight(dt);
   for (const a of rc.ais) {
     a.trip = Math.max(0, a.trip - dt); a.slideT = Math.max(0, a.slideT - dt);
     if (a.fin && a.x > rc.len + 400) { a.x += r.speed * 0.5 * dt; a.phase += dt * 6; continue; }
@@ -1907,15 +1948,21 @@ function drawRaceAis(L, R) {
     let tgt, rot = 0, gf = false;
     if (run.race.cd > 0) tgt = POSES.idle;
     else if (a.trip > 0) { tgt = POSES.dead; rot = -0.6; }
+    else if (a.punch > 0) tgt = POSES.dash;
     else if (a.jump) tgt = a.up ? POSES.jump : POSES.fall;
     else if (a.slideT > 0) tgt = POSES.slide;
     else { tgt = runSpec(a.phase); gf = true; }
     a.pose = blendSpec(a.pose, tgt, 0.4);
     ctx.globalAlpha = 0.88; drawStick(ctx, a.x, a.y, 1, a.pose, skinFrom(a.eq), { rot, groundFeet: gf, time, air: !!a.jump }); ctx.globalAlpha = 1;
-    const ty = a.y - (a.slideT > 0 ? 34 : 70); ctx.font = '800 9px Nunito,sans-serif'; const tw = ctx.measureText(a.name).width + 12;
+    if (a.guard > 0) { ctx.strokeStyle = 'rgba(159,208,255,0.9)'; ctx.fillStyle = 'rgba(90,160,255,0.25)'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.ellipse(a.x, a.y - 26, 22, 36, 0, 0, 7); ctx.fill(); ctx.stroke(); }
+    if (a.wind > 0) { const k = 1 - a.wind / 0.6; ctx.fillStyle = `rgba(255,42,61,${0.25 + k * 0.5})`; ctx.beginPath(); ctx.arc(a.x, a.y - 26, 30 + k * 10, 0, 7); ctx.fill(); ctx.font = '400 22px "Lilita One",sans-serif'; ctx.textAlign = 'center'; ctx.lineWidth = 4; ctx.strokeStyle = '#1b1830'; ctx.strokeText('!', a.x, a.y - 92); ctx.fillStyle = '#ff2a3d'; ctx.fillText('!', a.x, a.y - 92); }
+    const ty = a.y - (a.slideT > 0 ? 34 : 70) - ((run.race.cd > 0 || run.t < 1.2) ? a.i * 14 : 0); ctx.font = '800 9px Nunito,sans-serif'; const tw = ctx.measureText(a.name).width + 12;
     ctx.fillStyle = 'rgba(20,18,43,0.75)'; rrect(ctx, a.x - tw / 2, ty - 10, tw, 14, 7); ctx.fill(); ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.fillText(a.name, a.x, ty);
     if (a.stun > 0 && Math.floor(time * 8) % 2) { ctx.font = '400 12px "Lilita One",sans-serif'; ctx.fillStyle = '#ffe14d'; ctx.fillText('✦ ✦', a.x, ty - 13); }
   }
+  { const p = run.p, rc2 = run.race;
+    if (rc2.block.t > 0) { const k = rc2.block.t / 0.9; ctx.strokeStyle = `rgba(159,208,255,${0.5 + k * 0.5})`; ctx.fillStyle = 'rgba(90,160,255,0.28)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(p.x + 4, p.y - p.h / 2, 24, p.h / 2 + 12, 0, 0, 7); ctx.fill(); ctx.stroke(); }
+    if (rc2.atk.t > 0) { const k = 1 - rc2.atk.t / 0.28; ctx.strokeStyle = `rgba(255,225,77,${1 - k})`; ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(p.x + 6, p.y - 30, 26 + k * 34, -0.9, 0.9); ctx.stroke(); } }
   ctx.textAlign = 'left';
 }
 function raceStandings() {
@@ -1930,6 +1977,7 @@ function renderRaceHud() {
   const pos = x => bx + clamp(x / rc.len, 0, 1) * bw;
   for (const a of rc.ais) { ctx.fillStyle = skinFrom(a.eq).color; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(pos(a.x), by + 9, 4.5, 0, 7); ctx.fill(); ctx.stroke(); }
   ctx.fillStyle = '#ffe14d'; ctx.strokeStyle = '#1b1830'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(pos(p.x), by + 9, 6.5, 0, 7); ctx.fill(); ctx.stroke();
+  { const ab = $('atkBtn'), db = $('defBtn'); ab.classList.toggle('cd', rc.atk.cd > 0 || rc.cd > 0); db.classList.toggle('cd', (rc.block.cd > 0 && rc.block.t <= 0) || rc.cd > 0); db.classList.toggle('act', rc.block.t > 0); ab.classList.toggle('act', rc.atk.t > 0); }
   const st = raceStandings(), place = st.findIndex(q => q.you) + 1, left = Math.max(0, (rc.len - p.x) / 15);
   ctx.font = '400 13px "Lilita One",sans-serif'; ctx.textAlign = 'left'; ctx.fillStyle = place === 1 ? '#ffe14d' : '#fff'; ctx.fillText(`PLATZ ${place}/4`, bx, by + 28);
   ctx.font = '800 9px Nunito,sans-serif'; ctx.fillStyle = '#a9a6d6'; ctx.textAlign = 'right'; ctx.fillText(rc.done ? 'IM ZIEL!' : fmt(left) + ' m bis zum Ziel', bx + bw + 12, by + 27);
@@ -1951,7 +1999,7 @@ function raceEnd() {
   P.coins += r.coins + prize; P.stats.totalCoins += r.coins + prize; P.rounds++; save(true);
   const medal = ['🥇', '🥈', '🥉', '4.'];
   const rows = st.map((q, i) => `<div style="display:flex;justify-content:space-between;padding:4px 10px;border-radius:9px;margin:2px 0;${q.you ? 'background:rgba(255,213,79,.18);font-weight:900' : ''}"><span>${medal[i]} ${q.you ? esc(P.username) + ' (Du)' : esc(q.name) + ' <small style="opacity:.6">KI</small>'}</span><span>${RACE_REWARD[i]} 🪙</span></div>`).join('');
-  popup(place === 1 ? '🏆 Du hast gewonnen!' : `Platz ${place} von 4`, rows + `<div style="margin-top:8px">Belohnung: <b>+${prize} Coins</b> · Gesammelt: <b>+${r.coins} Coins</b>${place === 1 ? ' · <b>+1 Holztruhe</b>' : ''}</div>`,
+  popup(place === 1 ? '🏆 Du hast gewonnen!' : `Platz ${place} von 4`, rows + `<div style="margin-top:8px">Belohnung: <b>+${prize} Coins</b> · Gesammelt: <b>+${r.coins} Coins</b>${place === 1 ? ' · <b>+1 Holztruhe</b>' : ''}<br>👊 Treffer: <b>${rc.hits}</b> · 🛡️ Abgewehrt: <b>${rc.blocks}</b></div>`,
     [{ t: 'Menü', cls: 'dark', fn: () => { run = null; enterMenu(); } }, { t: 'Nochmal', fn: () => startGame('race') }]);
 }
 
@@ -2103,7 +2151,7 @@ function renderGame() {
   if (WORLDS[r.world].dark) { const hg = ctx.createRadialGradient(p.x, p.y - 26, 4, p.x, p.y - 26, 46); hg.addColorStop(0, `rgba(255,255,255,${0.45 * r.worldK})`); hg.addColorStop(1, 'rgba(255,255,255,0)'); ctx.fillStyle = hg; ctx.beginPath(); ctx.arc(p.x, p.y - 26, 46, 0, 7); ctx.fill(); }
   let tgt, rot = 0, gf = false;
   if (p.dead) { tgt = POSES.dead; rot = p.rot; }
-  else if (r.dash.t > 0) tgt = POSES.dash;
+  else if (r.dash.t > 0 || (r.race && r.race.atk.t > 0)) tgt = POSES.dash;
   else if (p.slide) tgt = POSES.slide;
   else if (p.onGround) { tgt = runSpec(p.phase); gf = true; }
   else if (r.pu.jet > 0) tgt = POSES.fly;
@@ -2244,7 +2292,7 @@ function renderAttract(dt) {
 }
 
 /* ------------------------------ Ablauf ------------------------------- */
-function startGame(mode) { audioInit(); newRun(); if (mode === 'race') setupRace(); state = 'play'; dashUi = -1; show('s-hud'); lastT = performance.now(); }
+function startGame(mode) { audioInit(); newRun(); if (mode === 'race') setupRace(); $('s-hud').classList.toggle('race', mode === 'race'); state = 'play'; dashUi = -1; show('s-hud'); lastT = performance.now(); }
 function pauseGame() { if (state !== 'play') return; state = 'pause'; show('s-pause'); input.jump = input.slide = false; touches.clear(); }
 function resumeGame() { if (state !== 'pause') return; state = 'play'; show('s-hud'); lastT = performance.now(); }
 function finishRun() {
@@ -2468,7 +2516,7 @@ function renderFreeChest() {
   if (txt !== freeTxtLast) { freeTxtLast = txt; $('freeTxt').textContent = txt; $('btnFree').classList.toggle('ready', ready); }
 }
 $('btnSingle').onclick = () => { SFX.click(); startGame(); };
-$('btnMulti').onclick = () => { SFX.click(); popup('🏁 Rennen gegen KI', 'Du trittst gegen <b>3 KI-Läufer</b> an. Wer zuerst <b>' + fmt(RACE_LEN / 15) + ' m</b> schafft, gewinnt.<br>Wenn du ein Hindernis triffst, stirbst du nicht, wirst aber kurz ausgebremst.<br><br>🥇 120 Coins + Holztruhe · 🥈 60 · 🥉 30 · 4. Platz 10', [{ t: 'Abbrechen', cls: 'dark' }, { t: 'Los geht’s!', fn: () => startGame('race') }]); };
+$('btnMulti').onclick = () => { SFX.click(); popup('🏁 Rennen gegen KI', 'Du trittst gegen <b>3 KI-Läufer</b> an. Wer zuerst <b>' + fmt(RACE_LEN / 15) + ' m</b> schafft, gewinnt.<br>Alle starten an derselben Stelle. Treffer bremsen dich nur aus.<br>👊 <b>Schlag</b>: haut einen Gegner in deiner Nähe um.<br>🛡️ <b>Block</b>: wehrt Angriffe ab – der Angreifer taumelt dann selbst.<br><br>🥇 120 Coins + Holztruhe · 🥈 60 · 🥉 30 · 4. Platz 10', [{ t: 'Abbrechen', cls: 'dark' }, { t: 'Los geht’s!', fn: () => startGame('race') }]); };
 $('btnShop').onclick = () => { SFX.click(); openShop('skins'); };
 $('btnChests').onclick = () => { SFX.click(); openShop('chests'); };
 $('btnCoinsNav').onclick = () => { SFX.click(); openShop('coins'); };
@@ -2480,7 +2528,7 @@ $('chipProfile').onclick = () => { SFX.click(); const li = levelInfo(P.xp);
 $('btnFree').onclick = () => { SFX.click(); if (freeReady()) { P.freeChestAt = Date.now() + FREE_CHEST_HOURS * 3600e3; save(true); openChest('holz', 'Gratis-Truhe'); } else toast('Die nächste Gratis-Truhe kommt bald. Schau später wieder vorbei!'); };
 $('btnAch').onclick = () => { SFX.click(); popup('Aufgaben & Erfolge', missionsHtml() + '<div class="hint" style="margin:10px 0 6px">Erfolge</div>' + achHtml()); };
 const stopEv = (el, fn) => { el.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); fn(); }, { passive: false }); el.addEventListener('mousedown', e => { e.stopPropagation(); fn(); }); };
-stopEv($('pauseBtn'), pauseGame); stopEv($('dashBtn'), () => { audioInit(); dashPress(); });
+stopEv($('pauseBtn'), pauseGame); stopEv($('dashBtn'), () => { audioInit(); dashPress(); }); stopEv($('atkBtn'), () => attackPress()); stopEv($('defBtn'), () => blockPress());
 $('btnResume').onclick = () => { SFX.click(); resumeGame(); };
 $('btnQuit').onclick = () => { SFX.click(); if (run && run.race) { P.coins += run.coins; save(true); } else finishRun(); run = null; enterMenu(); };
 $('btnAgain').onclick = async () => { SFX.click(); await Ads.interstitial(); if (popOpen) { run = null; enterMenu(); return; } startGame(); };
