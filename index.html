@@ -2,6 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Cache-Control" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -750,6 +751,17 @@ async function buyPack(pack) {
 const NOADS = { id: 'stickdash.noads', price: '2,99 €' };
 // Vor der Veröffentlichung eintragen (Apple verlangt eine Datenschutzerklärung, in Deutschland brauchst du auch ein Impressum):
 const PRIVACY_URL = '';
+/* Auto-Update für die Web-Version: lädt automatisch die neueste Version, ohne neuen Link */
+const BUILD = '2026-11-16-2';
+let updatePending = null;
+function applyUpdate(b) { location.replace(location.pathname + '?v=' + encodeURIComponent(b)); }
+async function checkUpdate() {
+  if (!/github\.io$/.test(location.hostname)) return;
+  try { const v = await (await fetch('version.json?t=' + Date.now(), { cache: 'no-store' })).json();
+    if (v && v.build && v.build !== BUILD) { if (typeof state === 'undefined' || !['play', 'dead', 'pause', 'revive', 'over'].includes(state)) applyUpdate(v.build); else updatePending = v.build; } } catch (e) {}
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdate(); });
+setTimeout(checkUpdate, 1500);
 const IMPRINT_URL = '';
 function openLegal(url, what) { if (url) window.open(url, '_blank', 'noopener'); else popup(what, `Hier erscheint später dein Link. Trage die Adresse in der Spieldatei bei <b>${what === 'Datenschutz' ? 'PRIVACY_URL' : 'IMPRINT_URL'}</b> ein.`); }
 // In der App: window.StickDashIAP.restore() liefert ein Promise mit der Liste gekaufter Produkt-IDs
@@ -2437,7 +2449,7 @@ async function checkGifts() {
 }
 
 /* ------------------------------ Menü ------------------------------- */
-function enterMenu() { state = 'menu'; rememberLogin(); updateMenu(); show('s-menu'); checkGifts(); }
+function enterMenu() { if (updatePending) { applyUpdate(updatePending); return; } state = 'menu'; rememberLogin(); updateMenu(); show('s-menu'); checkGifts(); }
 function updateMenu() {
   const li = levelInfo(P.xp);
   $('mName').textContent = P.username; $('mRank').textContent = rankOf(li.L); $('mLvl').textContent = li.L; $('mLvlRing').style.setProperty('--p', Math.round(li.cur / li.need * 100));
