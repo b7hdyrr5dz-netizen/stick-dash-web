@@ -755,9 +755,9 @@ async function buyPack(pack) {
 
 const NOADS = { id: 'stickdash.noads', price: '2,99 €' };
 // Vor der Veröffentlichung eintragen (Apple verlangt eine Datenschutzerklärung, in Deutschland brauchst du auch ein Impressum):
-const PRIVACY_URL = '';
+const PRIVACY_URL = 'https://b7hdyrr5dz-netizen.github.io/stick-dash-web/datenschutz.html';
 /* Auto-Update für die Web-Version: lädt automatisch die neueste Version, ohne neuen Link */
-const BUILD = '2026-11-16-3';
+const BUILD = '2026-11-16-4';
 let updatePending = null;
 function applyUpdate(b) { location.replace(location.pathname + '?v=' + encodeURIComponent(b)); }
 async function checkUpdate() {
@@ -767,7 +767,7 @@ async function checkUpdate() {
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdate(); });
 setTimeout(checkUpdate, 1500);
-const IMPRINT_URL = '';
+const IMPRINT_URL = 'https://b7hdyrr5dz-netizen.github.io/stick-dash-web/impressum.html';
 function openLegal(url, what) { if (url) window.open(url, '_blank', 'noopener'); else popup(what, `Hier erscheint später dein Link. Trage die Adresse in der Spieldatei bei <b>${what === 'Datenschutz' ? 'PRIVACY_URL' : 'IMPRINT_URL'}</b> ein.`); }
 // In der App: window.StickDashIAP.restore() liefert ein Promise mit der Liste gekaufter Produkt-IDs
 async function restorePurchases() {
