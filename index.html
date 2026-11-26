@@ -54,6 +54,8 @@ input.field{width:100%;height:clamp(40px,11vh,52px);border-radius:14px;border:2p
 input.field:focus{border-color:var(--teal);box-shadow:0 0 0 4px rgba(25,198,179,.15);}
 .inwrap{position:relative;} .inwrap svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);width:18px;height:18px;color:var(--muted);}
 input.code{text-align:center;letter-spacing:14px;font-size:clamp(22px,7vh,32px);font-family:var(--display);padding:0 14px;}
+.field.bad{border-color:var(--red)!important;}
+@media (max-height:420px){#guestHint{display:none;}}
 .err{color:var(--red);font-size:clamp(11px,3.2vh,14px);min-height:1.1em;}
 .hint{color:var(--muted);font-size:clamp(11px,3vh,14px);}
 .demo{background:rgba(255,200,61,.12);color:#ffd77a;border:1px solid rgba(255,200,61,.35);border-radius:12px;padding:6px 10px;font-size:clamp(10px,2.8vh,13px);}
@@ -304,20 +306,22 @@ input.code{text-align:center;letter-spacing:14px;font-size:clamp(22px,7vh,32px);
       <div class="left">
         <canvas class="logo" id="logoAuth" width="720" height="360"></canvas>
         <ul class="features">
-          <li><i>🏃</i>Renn, spring und rutsch durch die Fabrik</li>
-          <li><i>🎁</i>Öffne Truhen und sammle Skins</li>
-          <li><i>🏆</i>Knack Highscores und Erfolge</li>
+          <li><i>🏃</i><span data-t="f1">Renn, spring und rutsch durch die Fabrik</span></li>
+          <li><i>🎁</i><span data-t="f2">Öffne Truhen und sammle Skins</span></li>
+          <li><i>🏆</i><span data-t="f3">Knack Highscores und Erfolge</span></li>
         </ul>
       </div>
       <div class="right col">
         <h2 id="authTitle">Konto erstellen</h2>
         <div class="tabs"><button id="tabReg" class="on">Registrieren</button><button id="tabLog">Einloggen</button></div>
-        <div class="inwrap"><svg><use href="#i-mail"/></svg><input class="field" id="inEmail" type="email" inputmode="email" autocomplete="email" placeholder="E-Mail-Adresse" maxlength="120"></div>
-        <div class="inwrap" id="nameWrap"><svg><use href="#i-user"/></svg><input class="field" id="inName" type="text" autocomplete="nickname" placeholder="Benutzername (3–16 Zeichen)" maxlength="16"></div>
+        <div class="inwrap"><svg><use href="#i-mail"/></svg><input class="field" id="inEmail" type="email" inputmode="email" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="E-Mail-Adresse" maxlength="120"></div>
         <div class="inwrap"><svg><use href="#i-lock"/></svg><input class="field" id="inPass" type="password" autocomplete="new-password" placeholder="Passwort (mind. 8 Zeichen)" maxlength="72"><button type="button" id="passEye" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:0;color:var(--muted);font-size:18px;cursor:pointer">👁</button></div>
+        <div class="inwrap" id="nameWrap"><svg><use href="#i-user"/></svg><input class="field" id="inName" type="text" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="Spielername (3–16 Zeichen)" maxlength="16"></div>
         <div class="err" id="authErr"></div>
         <button class="btn" id="btnSend">Konto erstellen</button>
         <button type="button" id="btnForgot" style="display:none;background:none;border:0;color:var(--muted);font:inherit;font-size:12px;text-decoration:underline;cursor:pointer;margin-top:-2px">Passwort vergessen?</button>
+        <button class="btn dark small" id="btnGuest">Ohne Konto spielen</button>
+        <div class="hint" id="guestHint" style="text-align:center">Ein Konto brauchst du nur für die Online-Bestenliste und um deinen Spielstand zu sichern.</div>
         <div class="demo" id="demoNote" style="display:none">Demo-Modus: Supabase ist noch nicht verbunden. Konten werden nur auf diesem Gerät gespeichert.</div>
       </div>
     </div>
@@ -529,6 +533,9 @@ const RESEND_COOLDOWN = 60;             // Sekunden bis "Code erneut senden"
 const WELCOME_COINS = 100;
 const FREE_CHEST_HOURS = 4;
 
+// Login-Bereich ist zweisprachig: Deutsch, sonst Englisch
+const LANG_DE = /^de/i.test((navigator.languages && navigator.languages[0]) || navigator.language || 'de');
+const tr = (de, en) => LANG_DE ? de : en;
 const DEMO = SUPABASE_URL.includes('DEIN-PROJEKT') || SUPABASE_KEY.includes('DEIN-ANON-KEY');
 
 /* ------------------------------ Helfer ------------------------------ */
@@ -556,11 +563,16 @@ function newPlayerId() {
 /* =====================================================================
    AUTH + SPEICHERN (Supabase oder Demo)
    ===================================================================== */
+const GUEST = { id: 'guest', guest: true, email: '', user_metadata: {} };
+const isGuest = () => !!(Auth.user && Auth.user.guest);
 const Auth = {
   sb: null, user: null, _demoCodes: {},
+  // Gastmodus: Spielstand nur auf diesem Gerät, kein Konto nötig
+  startGuest() { this.user = GUEST; return this.user; },
+  needSb() { if (!DEMO && !this.sb) throw new Error(tr('Keine Verbindung zum Server. Bitte prüfe deine Internetverbindung und starte die App neu.', 'Cannot reach the server. Please check your internet connection and restart the app.')); },
   async init() {
     if (DEMO) { this.user = lsJSON('sd_demo_session', null); return this.user; }
-    if (!window.supabase) throw new Error('Supabase-Bibliothek konnte nicht geladen werden. Bitte Internetverbindung prüfen.');
+    if (!window.supabase) return null; // ohne Bibliothek geht es im Gastmodus weiter
     this.sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, autoRefreshToken: true, storageKey: 'stickdash-auth' } });
     const { data } = await this.sb.auth.getSession();
     this.user = data.session ? data.session.user : null;
@@ -574,6 +586,7 @@ const Auth = {
       else { const u = users[email]; if (!u || (u.pw && u.pw !== h)) throw new Error('E-Mail oder Passwort ist falsch.'); }
       const u = users[email]; this.user = { id: u.id, email, user_metadata: { username: u.username } }; LS.setItem('sd_demo_session', JSON.stringify(this.user)); return this.user;
     }
+    this.needSb();
     const res = isRegister ? await this.sb.auth.signUp({ email, password, options: { data: { username } } }) : await this.sb.auth.signInWithPassword({ email, password });
     if (res.error) throw new Error(this.mapError(res.error));
     if (!res.data.session) {
@@ -584,6 +597,7 @@ const Auth = {
   },
   async resetPassword(email) {
     if (DEMO) throw new Error('Im Demo-Modus gibt es keine Mails. Lege einfach ein neues Konto an.');
+    this.needSb();
     const { error } = await this.sb.auth.resetPasswordForEmail(email);
     if (error) throw new Error(this.mapError(error));
   },
@@ -621,19 +635,21 @@ const Auth = {
   },
   mapError(error) {
     const m = (error.message || '').toLowerCase();
-    if (m.includes('signups not allowed') || m.includes('user not found')) return 'Kein Konto mit dieser E-Mail gefunden. Bitte zuerst registrieren.';
+    if (m.includes('signups not allowed') || m.includes('user not found')) return tr('Kein Konto mit dieser E-Mail gefunden. Bitte zuerst registrieren.', 'No account found with this email. Please sign up first.');
     if (m.includes('security purposes') || m.includes('rate limit') || error.status === 429) {
       const s = (error.message.match(/(\d+)\s*sec/) || [])[1];
-      return s ? `Bitte warte noch ${s} Sekunden, bevor du einen neuen Code anforderst.` : 'Zu viele Anfragen. Bitte warte kurz und versuche es erneut.';
+      return s ? tr(`Bitte warte noch ${s} Sekunden und versuche es dann erneut.`, `Please wait ${s} seconds and try again.`) : tr('Zu viele Anfragen. Bitte warte kurz und versuche es erneut.', 'Too many requests. Please wait a moment and try again.');
     }
-    if (m.includes('invalid login credentials')) return 'E-Mail oder Passwort ist falsch.';
-    if (m.includes('already registered') || m.includes('already been registered')) return 'Mit dieser E-Mail gibt es schon ein Konto. Bitte einloggen.';
-    if (m.includes('email not confirmed')) return 'Bitte bestätige zuerst deine E-Mail-Adresse über den Link in der Mail.';
-    if (m.includes('password') && (m.includes('at least') || m.includes('short') || m.includes('weak'))) return 'Das Passwort ist zu kurz oder zu einfach. Nimm mindestens 8 Zeichen.';
-    if (m.includes('invalid') && m.includes('email')) return 'Diese E-Mail-Adresse ist ungültig.';
-    return 'Fehler: ' + error.message;
+    if (m.includes('invalid login credentials')) return tr('E-Mail oder Passwort ist falsch.', 'Wrong email or password.');
+    if (m.includes('already registered') || m.includes('already been registered') || m.includes('already exists')) return tr('Mit dieser E-Mail gibt es schon ein Konto. Bitte einloggen.', 'An account with this email already exists. Please log in.');
+    if (m.includes('email not confirmed')) return tr('Bitte bestätige zuerst deine E-Mail-Adresse über den Link in der Mail.', 'Please confirm your email address using the link in the email first.');
+    if (m.includes('password') && (m.includes('at least') || m.includes('short') || m.includes('weak') || m.includes('should contain'))) return tr('Das Passwort ist zu kurz oder zu einfach. Nimm mindestens 8 Zeichen.', 'The password is too short or too simple. Use at least 8 characters.');
+    if (m.includes('invalid') && m.includes('email')) return tr('Diese E-Mail-Adresse ist ungültig.', 'This email address is invalid.');
+    if (m.includes('failed to fetch') || m.includes('network') || m.includes('load failed')) return tr('Keine Verbindung zum Server. Bitte prüfe deine Internetverbindung.', 'Cannot reach the server. Please check your internet connection.');
+    return tr('Fehler: ', 'Error: ') + error.message;
   },
   async logout() {
+    if (isGuest()) { this.user = null; return; }
     if (DEMO) { LS.removeItem('sd_demo_session'); this.user = null; return; }
     try { await this.sb.auth.signOut(); } catch (e) { }
     this.user = null;
@@ -651,12 +667,14 @@ const Auth = {
     this.user = null;
   },
   async loadProfile() {
+    if (isGuest()) return lsJSON('sd_guest_profile', null);
     if (DEMO) return lsJSON('sd_demo_profile_' + this.user.id, null);
     const { data, error } = await this.sb.from('profiles').select('username,player_id,data').eq('id', this.user.id).maybeSingle();
     if (error) throw new Error('Profil konnte nicht geladen werden: ' + error.message);
     return data ? Object.assign({}, data.data || {}, { username: data.username, pid: data.player_id || (data.data || {}).pid }) : null;
   },
   async saveProfile(d) {
+    if (isGuest()) { LS.setItem('sd_guest_profile', JSON.stringify(d)); return; }
     if (DEMO) { LS.setItem('sd_demo_profile_' + this.user.id, JSON.stringify(d)); return; }
     for (let attempt = 0; attempt < 3; attempt++) {
       const { error } = await this.sb.from('profiles').upsert({ id: this.user.id, username: d.username, player_id: d.pid, data: d, updated_at: new Date().toISOString() });
@@ -666,11 +684,12 @@ const Auth = {
     }
   },
   async sendWelcome(username) {
-    if (DEMO) return;
+    if (DEMO || isGuest()) return;
     try { await this.sb.functions.invoke('welcome-email', { body: { username } }); } catch (e) { console.warn('Willkommens-Mail', e); }
   },
   // Geschenke, die du im Supabase-Dashboard an eine Spieler-ID schickst (Tabelle "gifts")
   async claimGifts() {
+    if (isGuest() || (!DEMO && !this.sb)) return [];
     if (DEMO) { const all = lsJSON('sd_demo_gifts', []); const mine = all.filter(g => g.player_id === P.pid); LS.setItem('sd_demo_gifts', JSON.stringify(all.filter(g => g.player_id !== P.pid))); return mine; }
     const { data, error } = await this.sb.rpc('claim_gifts');
     if (error) { console.warn('Geschenke', error); return []; }
@@ -687,6 +706,7 @@ const Auth = {
       rows.sort((a, b) => b.score - a.score); rows.forEach((r, i) => r.rank = i + 1);
       return rows;
     }
+    this.needSb();
     const { data, error } = await this.sb.rpc('leaderboard', { mode, day: todayStr() });
     if (error) throw new Error('Die Bestenliste ist noch nicht eingerichtet (SQL aus der Anleitung, Abschnitt 7f).');
     return data || [];
@@ -758,7 +778,7 @@ const NOADS = { id: 'stickdash.noads', price: '2,99 €' };
 // Vor der Veröffentlichung eintragen (Apple verlangt eine Datenschutzerklärung, in Deutschland brauchst du auch ein Impressum):
 const PRIVACY_URL = 'https://b7hdyrr5dz-netizen.github.io/stick-dash-web/datenschutz.html';
 /* Auto-Update für die Web-Version: lädt automatisch die neueste Version, ohne neuen Link */
-const BUILD = '2026-11-16-5';
+const BUILD = '2026-11-26-1';
 let updatePending = null;
 function applyUpdate(b) { location.replace(location.pathname + '?v=' + encodeURIComponent(b)); }
 async function checkUpdate() {
@@ -2389,7 +2409,24 @@ function coinPopupArt(g, w, h) { for (let i = 0; i < 5; i++) g.drawImage(caches.
 
 /* ------------------------------ Login ------------------------------- */
 let authMode = 'reg', pendingEmail = '', pendingName = '', codeSentAt = 0, codeTimer = null;
-function setAuthMode(m) { authMode = m; $('tabReg').classList.toggle('on', m === 'reg'); $('tabLog').classList.toggle('on', m === 'log'); $('nameWrap').style.display = m === 'reg' ? '' : 'none'; $('authTitle').textContent = m === 'reg' ? 'Konto erstellen' : 'Willkommen zurück'; $('btnSend').textContent = m === 'reg' ? 'Konto erstellen' : 'Einloggen'; $('btnForgot').style.display = m === 'log' ? '' : 'none'; $('inPass').autocomplete = m === 'reg' ? 'new-password' : 'current-password'; $('authErr').textContent = ''; }
+function setAuthMode(m) { authMode = m; $('tabReg').classList.toggle('on', m === 'reg'); $('tabLog').classList.toggle('on', m === 'log'); $('nameWrap').style.display = m === 'reg' ? '' : 'none'; $('authTitle').textContent = m === 'reg' ? tr('Konto erstellen', 'Create account') : tr('Willkommen zurück', 'Welcome back'); $('btnSend').textContent = m === 'reg' ? tr('Konto erstellen', 'Create account') : tr('Einloggen', 'Log in'); $('btnForgot').style.display = m === 'log' ? '' : 'none'; $('inPass').autocomplete = m === 'reg' ? 'new-password' : 'current-password'; authError(''); }
+// Fehlermeldung anzeigen und das betroffene Feld markieren
+function authError(msg, field) {
+  $('authErr').textContent = msg || ''; ['inEmail', 'inName', 'inPass'].forEach(id => $(id).classList.toggle('bad', id === field));
+  if (field) { try { $(field).focus(); } catch (e) { } }
+}
+function applyAuthLang() {
+  const T = { f1: ['Renn, spring und rutsch durch die Fabrik', 'Run, jump and slide through the factory'], f2: ['Öffne Truhen und sammle Skins', 'Open chests and collect skins'], f3: ['Knack Highscores und Erfolge', 'Beat high scores and earn achievements'] };
+  document.querySelectorAll('[data-t]').forEach(e => { const t = T[e.dataset.t]; if (t) e.textContent = tr(t[0], t[1]); });
+  $('tabReg').textContent = tr('Registrieren', 'Sign up'); $('tabLog').textContent = tr('Einloggen', 'Log in');
+  $('inEmail').placeholder = tr('E-Mail-Adresse', 'Email address'); $('inPass').placeholder = tr('Passwort (mind. 8 Zeichen)', 'Password (min. 8 characters)'); $('inName').placeholder = tr('Spielername (3–16 Zeichen)', 'Player name (3–16 characters)');
+  $('btnForgot').textContent = tr('Passwort vergessen?', 'Forgot password?'); $('btnGuest').textContent = tr('Ohne Konto spielen', 'Play without account');
+  $('guestHint').textContent = tr('Ein Konto brauchst du nur für die Online-Bestenliste und um deinen Spielstand zu sichern.', 'You only need an account for the online leaderboard and to back up your progress.');
+}
+// Spielername: alle Buchstaben/Ziffern + Leerzeichen _ - . erlaubt; eine E-Mail (z. B. durch Autofill) wird zum Teil vor dem @
+function cleanName(n) { n = String(n || '').trim(); if (n.includes('@')) n = n.split('@')[0]; return n.replace(/\s+/g, ' ').slice(0, 16).trim(); }
+const NAME_OK = /^[\p{L}\p{N}_\-. ]{3,16}$/u;
+const EMAIL_OK = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 $('tabReg').onclick = () => { SFX.click(); setAuthMode('reg'); };
 $('tabLog').onclick = () => { SFX.click(); setAuthMode('log'); };
 async function sendCode(isResend) {
@@ -2420,28 +2457,33 @@ function updateCodeTimer() {
   $('btnVerify').disabled = left <= 0;
   const rb = $('btnResend'); if (rb.textContent !== 'Sende …') { rb.disabled = cd > 0; rb.textContent = cd > 0 ? `Erneut senden (${cd}s)` : 'Code erneut senden'; }
 }
+let loggingIn = false;
 async function passwordLogin() {
-  const err = $('authErr'); err.textContent = '';
-  const email = $('inEmail').value.trim().toLowerCase(), name = $('inName').value.trim(), pw = $('inPass').value, reg = authMode === 'reg';
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) { err.textContent = 'Bitte gib eine gültige E-Mail-Adresse ein.'; return; }
-  if (reg && !/^[A-Za-z0-9ÄÖÜäöüß_\-. ]{3,16}$/.test(name)) { err.textContent = 'Benutzername: 3–16 Zeichen (Buchstaben, Zahlen, _ - .).'; return; }
-  if (pw.length < 8) { err.textContent = 'Das Passwort braucht mindestens 8 Zeichen.'; return; }
-  const btn = $('btnSend'); btn.disabled = true; const old = btn.textContent; btn.textContent = reg ? 'Erstelle Konto …' : 'Logge ein …';
+  if (loggingIn) return; authError('');
+  const email = $('inEmail').value.replace(/\s+/g, '').toLowerCase(), pw = $('inPass').value, reg = authMode === 'reg';
+  let name = cleanName($('inName').value); if (reg && !name) name = cleanName(email);
+  if (!EMAIL_OK.test(email)) { authError(tr('Bitte gib eine gültige E-Mail-Adresse ein.', 'Please enter a valid email address.'), 'inEmail'); return; }
+  if (pw.length < 8) { authError(tr('Das Passwort braucht mindestens 8 Zeichen.', 'The password needs at least 8 characters.'), 'inPass'); return; }
+  if (reg && !NAME_OK.test(name)) { authError(tr('Spielername: 3–16 Zeichen (Buchstaben, Zahlen, Leerzeichen, _ - .).', 'Player name: 3–16 characters (letters, numbers, spaces, _ - .).'), 'inName'); return; }
+  $('inEmail').value = email; if (reg) $('inName').value = name;
+  const btn = $('btnSend'); btn.disabled = true; loggingIn = true; const old = btn.textContent; btn.textContent = reg ? tr('Erstelle Konto …', 'Creating account …') : tr('Logge ein …', 'Logging in …');
   pendingEmail = email; pendingName = name;
   try { const u = await Auth.passwordAuth(email, pw, name, reg); $('inPass').value = ''; await afterLogin(u); }
-  catch (e) { err.textContent = e.message; }
-  btn.textContent = old; btn.disabled = false;
+  catch (e) { authError(e.message); }
+  btn.textContent = old; btn.disabled = false; loggingIn = false;
 }
+$('btnGuest').onclick = () => { audioInit(); SFX.click(); authError(''); afterLogin(Auth.startGuest()); };
 $('btnSend').onclick = () => { audioInit(); SFX.click(); passwordLogin(); };
-$('inPass').addEventListener('keydown', e => { if (e.key === 'Enter') passwordLogin(); });
+$('inPass').addEventListener('keydown', e => { if (e.key !== 'Enter') return; if (authMode === 'reg' && !$('inName').value.trim()) $('inName').focus(); else passwordLogin(); });
 $('passEye').onclick = () => { const i = $('inPass'); i.type = i.type === 'password' ? 'text' : 'password'; };
 $('btnForgot').onclick = async () => { SFX.click(); const email = $('inEmail').value.trim().toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) { $('authErr').textContent = 'Gib oben deine E-Mail-Adresse ein, dann tippe nochmal auf „Passwort vergessen?“.'; return; }
-  try { await Auth.resetPassword(email); popup('Mail unterwegs', 'Falls ein Konto existiert, bekommst du gleich eine Mail mit einem Link zum Zurücksetzen.'); } catch (e) { $('authErr').textContent = e.message; } };
+  if (!EMAIL_OK.test(email)) { authError(tr('Gib oben deine E-Mail-Adresse ein, dann tippe nochmal auf „Passwort vergessen?“.', 'Enter your email address above, then tap “Forgot password?” again.'), 'inEmail'); return; }
+  try { await Auth.resetPassword(email); popup(tr('Mail unterwegs', 'Email sent'), tr('Falls ein Konto existiert, bekommst du gleich eine Mail mit einem Link zum Zurücksetzen.', 'If an account exists, you will receive an email with a reset link shortly.')); } catch (e) { authError(e.message); } };
 $('btnResend').onclick = () => { SFX.click(); sendCode(true); };
 $('btnBack').onclick = () => { SFX.click(); clearInterval(codeTimer); show('s-auth'); };
-$('inEmail').addEventListener('keydown', e => { if (e.key !== 'Enter') return; (authMode === 'reg' ? $('inName') : $('inPass')).focus(); });
-$('inName').addEventListener('keydown', e => { if (e.key === 'Enter') $('inPass').focus(); });
+$('inEmail').addEventListener('keydown', e => { if (e.key === 'Enter') $('inPass').focus(); });
+$('inName').addEventListener('keydown', e => { if (e.key === 'Enter') passwordLogin(); });
+['inEmail', 'inName', 'inPass'].forEach(id => $(id).addEventListener('input', () => $(id).classList.remove('bad')));
 $('inCode').addEventListener('input', e => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 6); if (e.target.value.length === 6) verifyCode(); });
 $('btnVerify').onclick = () => { SFX.click(); verifyCode(); };
 let verifying = false;
@@ -2455,22 +2497,37 @@ async function verifyCode() {
   verifying = false; $('btnVerify').textContent = 'Bestätigen'; updateCodeTimer();
 }
 async function afterLogin(user) {
-  const metaName = (user.user_metadata && user.user_metadata.username) || pendingName || (user.email || 'Spieler').split('@')[0].slice(0, 16);
+  const guest = !!user.guest;
+  const metaName = guest ? tr('Gast', 'Guest') : (user.user_metadata && user.user_metadata.username) || pendingName || (user.email || 'Spieler').split('@')[0].slice(0, 16);
   let remote = null, loadErr = null;
   try { remote = await Auth.loadProfile(); } catch (e) { loadErr = e; }
-  const cached = lsJSON('sd_cache_' + user.id, null);
+  const cached = guest ? null : lsJSON('sd_cache_' + user.id, null);
   let data = remote; if (cached && (!remote || (cached.savedAt || 0) > (remote.savedAt || 0))) data = cached;
   if (!data && loadErr) {
-    state = 'auth'; show('s-auth');
-    popup('Keine Verbindung', 'Dein Spielstand konnte nicht geladen werden. Bitte prüfe deine Internetverbindung.', [{ t: 'Erneut versuchen', fn: () => afterLogin(user) }]);
+    Auth.user = null; state = 'auth'; show('s-auth');
+    popup(tr('Keine Verbindung', 'No connection'), tr('Dein Spielstand konnte nicht geladen werden. Bitte prüfe deine Internetverbindung. Du kannst auch ohne Konto weiterspielen.', 'Your progress could not be loaded. Please check your internet connection. You can also keep playing without an account.'), [{ t: tr('Erneut versuchen', 'Try again'), fn: () => { Auth.user = user; afterLogin(user); } }, { t: tr('Ohne Konto spielen', 'Play without account'), cls: 'dark', fn: () => afterLogin(Auth.startGuest()) }]);
     return;
+  }
+  // Neues Konto: Fortschritt aus dem Gastmodus übernehmen
+  const guestData = !guest && !data ? lsJSON('sd_guest_profile', null) : null;
+  if (guestData && (guestData.rounds > 0 || guestData.coins > 0)) {
+    data = Object.assign({}, guestData, { username: metaName }); LS.removeItem('sd_guest_profile'); LS.setItem('sd_guest_welcomed', '1');
+    P = normalize(data, metaName); Music.sync(); await save(true); Auth.sendWelcome(P.username); SFX.buy();
+    popup(tr(`Konto erstellt, ${P.username}!`, `Account created, ${P.username}!`), tr('Dein bisheriger Spielstand (Coins, Skins, Highscore) ist jetzt in deinem Konto gesichert.', 'Your progress so far (coins, skins, high score) is now saved to your account.') + `<br>${tr('Deine Spieler-ID', 'Your player ID')}: <b class="pid">${P.pid}</b>`, [{ t: 'OK' }], coinPopupArt);
+    enterMenu(); return;
   }
   const isNew = !data;
   P = normalize(data, metaName);
   let needSave = false;
   if (!P.pid) { P.pid = newPlayerId(); needSave = true; }
   Music.sync();
-  if (isNew) {
+  if (isNew && guest) {
+    // Gast: Startgeschenk nur einmal pro Gerät
+    const first = !LS.getItem('sd_guest_welcomed'); LS.setItem('sd_guest_welcomed', '1');
+    P.coins = first ? WELCOME_COINS : 0; P.lastDaily = todayStr(); P.streak = 1; P.freeChestAt = 0;
+    await save(true);
+    if (first) { SFX.buy(); popup('Willkommen bei Stick Dash!', `Leg einfach los, ein Konto brauchst du nicht. Als Startgeschenk bekommst du <b>${WELCOME_COINS} Coins</b>.<br><span style="color:var(--muted)">Dein Spielstand wird auf diesem Gerät gespeichert. In den Einstellungen kannst du jederzeit ein Konto erstellen, um ihn zu sichern und in der Online-Bestenliste zu erscheinen.</span>`, [{ t: 'Los geht\'s!' }], coinPopupArt); }
+  } else if (isNew) {
     P.coins = WELCOME_COINS; P.lastDaily = todayStr(); P.streak = 1; P.freeChestAt = 0;
     await save(true);
     Auth.sendWelcome(P.username); SFX.buy();
@@ -2608,7 +2665,11 @@ async function loadRank() {
   L.innerHTML = (DEMO ? '<div class="hint" style="text-align:center">Demo-Modus: Beispiel-Spieler. Mit Supabase siehst du echte Spieler.</div>' : '') + top.map(row).join('') + (me && me.rank > 50 ? '<div class="hint" style="text-align:center">· · ·</div>' + row(me) : '') + (!me ? `<div class="hint" style="text-align:center">${rankMode === 'day' ? 'Spiel heute eine Runde, um in der Tagesliste zu erscheinen.' : 'Spiel eine Runde, um in der Bestenliste zu erscheinen.'}</div>` : '');
   const el = L.querySelector('.me'); if (el) el.scrollIntoView({ block: 'center' });
 }
-$('btnRank').onclick = () => { SFX.click(); state = 'rank'; rankMode = 'all'; show('s-rank'); loadRank(); };
+// Für Gäste: Hinweis, dass diese Funktion ein Konto braucht
+function askAccount(what) {
+  popup('Konto benötigt', `${what} gibt es nur mit einem kostenlosen Konto. Dein bisheriger Spielstand wird dabei übernommen.`, [{ t: 'Später', cls: 'dark' }, { t: 'Konto erstellen', fn: () => toAuth('reg') }]);
+}
+$('btnRank').onclick = () => { SFX.click(); if (isGuest()) { askAccount('Die Online-Bestenliste'); return; } state = 'rank'; rankMode = 'all'; show('s-rank'); loadRank(); };
 $('rankBack').onclick = () => { SFX.click(); enterMenu(); };
 document.querySelectorAll('#rankSeg button').forEach(b => b.onclick = () => { SFX.click(); rankMode = b.dataset.m; loadRank(); });
 
@@ -2792,7 +2853,9 @@ function closeChest() {
 /* --------------------------- Einstellungen --------------------------- */
 function openSettings() {
   state = 'settings'; $('setPid').textContent = P.pid;
-  $('setAcc').textContent = `${P.username} · ${Auth.user.email || ''}${DEMO ? ' · Demo-Modus' : ''}`;
+  const g = isGuest();
+  $('setAcc').textContent = g ? 'Du spielst ohne Konto. Dein Spielstand ist nur auf diesem Gerät gespeichert.' : `${P.username} · ${Auth.user.email || ''}${DEMO ? ' · Demo-Modus' : ''}`;
+  $('btnLogout').textContent = g ? 'Konto erstellen / Einloggen' : 'Logout'; $('btnDelete').style.display = g ? 'none' : '';
   syncToggles(); $('achList').innerHTML = '<div class="hint">Erfolge</div>' + achHtml(); show('s-settings');
 }
 function syncToggles() { $('tgSound').querySelector('.sw').classList.toggle('on', P.settings.sound); $('tgMusic').querySelector('.sw').classList.toggle('on', P.settings.music); }
@@ -2805,11 +2868,15 @@ $('btnCopy').onclick = async () => {
   catch (e) { const r = document.createRange(); r.selectNodeContents($('setPid')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); toast('ID markiert – jetzt kopieren.'); }
 };
 // Zuletzt benutzte Anmeldedaten bleiben auf dem Gerät gespeichert und werden im Login-Formular vorausgefüllt
-function rememberLogin() { if (P && Auth.user && Auth.user.email) LS.setItem('sd_last_login', JSON.stringify({ email: Auth.user.email, username: P.username })); }
+function rememberLogin() { if (P && Auth.user && !Auth.user.guest && Auth.user.email) LS.setItem('sd_last_login', JSON.stringify({ email: Auth.user.email, username: P.username })); }
 function fillAuth() { const l = lsJSON('sd_last_login', null); $('inEmail').value = l && l.email ? l.email : ''; $('inName').value = l && l.username ? l.username : ''; return !!(l && l.email); }
-function toAuth() { P = null; Music.stop(); fillAuth(); setAuthMode('log'); state = 'auth'; show('s-auth'); }
+async function toAuth(mode) {
+  if (isGuest()) { await save(true); Auth.user = null; }
+  P = null; Music.stop(); const known = fillAuth(); setAuthMode(mode || (known ? 'log' : 'reg')); state = 'auth'; show('s-auth');
+}
 $('btnLogout').onclick = () => {
   SFX.click();
+  if (isGuest()) { toAuth(); return; }
   popup('Ausloggen?', 'Dein Spielstand ist in deinem Konto gespeichert.', [{ t: 'Abbrechen', cls: 'dark' }, { t: 'Logout', fn: async () => { await save(true); await Auth.logout(); toAuth(); } }]);
 };
 $('btnDelete').onclick = () => {
@@ -2894,15 +2961,16 @@ const Loader = {
   if (document.fonts && document.fonts.load) Promise.all(['400 20px "Lilita One"', '700 12px Nunito', '800 12px Nunito', '900 12px Nunito'].map(f => document.fonts.load(f))).then(() => { drawLogos(); if (Loader.logo) drawLogo(Loader.logo); }).catch(() => { });
   requestAnimationFrame(frame);
   if (DEMO) $('demoNote').style.display = 'block';
-  setAuthMode(fillAuth() ? 'log' : 'reg');
+  applyAuthLang(); setAuthMode(fillAuth() ? 'log' : 'reg');
   try {
     Loader.set(0.55, 'Verbinde mit dem Server …');
     const u = await Auth.init();
     Loader.set(0.85, u ? 'Spielstand wird geladen …' : 'Fast fertig …');
-    if (u) await afterLogin(u); else { state = 'auth'; show('s-auth'); }
+    await afterLogin(u || Auth.startGuest()); // ohne Konto geht es direkt los (Gastmodus)
     Loader.finish();
   } catch (e) {
-    Loader.finish(); state = 'auth'; show('s-auth'); $('authErr').textContent = e.message; $('btnSend').disabled = true;
+    console.warn('Start', e);
+    Loader.finish(); try { await afterLogin(Auth.startGuest()); } catch (e2) { state = 'auth'; show('s-auth'); authError(e.message); }
   }
 })();
 </script>
